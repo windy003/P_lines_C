@@ -21,36 +21,47 @@ def is_text_file(file_path, block_size=1024):
 
 def count_and_sort_file_lines():
     """
-    Counts lines in all detected text files in the current directory,
-    then prints the results sorted by line count in descending order.
+    Counts lines in all detected text files in the current directory and all subdirectories,
+    then prints the total lines and lines by file type.
     """
-    file_lines = []
+    type_lines = {}
     total_lines = 0
     
-    print("Scanning files in the current directory...")
+    print("Scanning files in the current directory and all subdirectories...")
     try:
         script_name = os.path.basename(__file__)
 
-        for filename in os.listdir('.'):
-            if os.path.isfile(filename) and filename != script_name:
-                if is_text_file(filename):
-                    try:
-                        with open(filename, 'r', encoding='utf-8', errors='ignore') as f:
-                            line_count = sum(1 for line in f)
-                            total_lines += line_count
-                            file_lines.append((filename, line_count))
-                    except Exception as e:
-                        print(f"Could not process file {filename}: {e}")
+        for root, dirs, files in os.walk('.'):
+            for filename in files:
+                file_path = os.path.join(root, filename)
+                relative_path = os.path.relpath(file_path, '.')
+                
+                if relative_path != script_name:
+                    if is_text_file(file_path):
+                        try:
+                            with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+                                line_count = sum(1 for line in f)
+                                total_lines += line_count
+                                
+                                # Get file extension
+                                _, ext = os.path.splitext(filename)
+                                if not ext:
+                                    ext = "no extension"
+                                else:
+                                    ext = ext.lower()
+                                
+                                if ext not in type_lines:
+                                    type_lines[ext] = 0
+                                type_lines[ext] += line_count
+                        except Exception as e:
+                            print(f"Could not process file {relative_path}: {e}")
         
-        # Sort the list of files by line count in descending order.
-        file_lines.sort(key=lambda item: item[1], reverse=True)
+        print("\n--- Line Count by File Type (from highest to lowest) ---")
+        for file_type, line_count in sorted(type_lines.items(), key=lambda x: x[1], reverse=True):
+            print(f"{file_type:<15}: {line_count:>8} lines")
 
-        print("\n--- Line Count Report (from highest to lowest) ---")
-        for filename, line_count in file_lines:
-            print(f"Lines: {line_count:<7} | File: {filename}")
-
-        print("--------------------------------------------------")
-        print(f"Total lines in all scanned text files: {total_lines}")
+        print("----------------------------------")
+        print(f"Total lines: {total_lines}")
 
     except Exception as e:
         print(f"An error occurred: {e}")
