@@ -1,4 +1,11 @@
 import os
+import argparse
+
+def parse_args():
+    parser = argparse.ArgumentParser(description='Count lines in text files.')
+    parser.add_argument('--exclude-folder', nargs='+', default=[], help='Folder names to exclude')
+    parser.add_argument('--exclude-file', nargs='+', default=[], help='File names to exclude')
+    return parser.parse_args()
 
 def is_text_file(file_path, block_size=1024):
     """
@@ -19,24 +26,31 @@ def is_text_file(file_path, block_size=1024):
     except UnicodeDecodeError:
         return False
 
-def count_and_sort_file_lines():
+def count_and_sort_file_lines(exclude_folders=None, exclude_files=None):
     """
     Counts lines in all detected text files in the current directory and all subdirectories,
     then prints the total lines and lines by file type.
     """
+    exclude_folders = set(exclude_folders or [])
+    exclude_files = set(exclude_files or [])
     type_lines = {}
     total_lines = 0
-    
+
+    if exclude_folders:
+        print(f"Excluding folders: {', '.join(exclude_folders)}")
+    if exclude_files:
+        print(f"Excluding files: {', '.join(exclude_files)}")
     print("Scanning files in the current directory and all subdirectories...")
     try:
         script_name = os.path.basename(__file__)
 
         for root, dirs, files in os.walk('.'):
+            dirs[:] = [d for d in dirs if d not in exclude_folders]
             for filename in files:
                 file_path = os.path.join(root, filename)
                 relative_path = os.path.relpath(file_path, '.')
                 
-                if relative_path != script_name:
+                if relative_path != script_name and filename not in exclude_files:
                     if is_text_file(file_path):
                         try:
                             with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
@@ -67,4 +81,5 @@ def count_and_sort_file_lines():
         print(f"An error occurred: {e}")
 
 if __name__ == "__main__":
-    count_and_sort_file_lines()
+    args = parse_args()
+    count_and_sort_file_lines(args.exclude_folder, args.exclude_file)

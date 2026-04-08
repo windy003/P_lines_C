@@ -1,1 +1,0 @@
-pyinstaller  --onefile --nowindow  --name "lines_counter.exe"  .\lines_counter.py
