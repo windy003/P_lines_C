@@ -15,8 +15,8 @@ def parse_args():
     parser = argparse.ArgumentParser(description='Count lines in text files.')
     parser.add_argument('path', nargs='?', default='.',
                         help='Directory to scan (default: current directory)')
-    parser.add_argument('-e', '--exclude-folder', nargs='+', default=[], help='Folder names to exclude')
-    parser.add_argument('-x', '--exclude-file', nargs='+', default=[], help='File names to exclude')
+    parser.add_argument('-x', '--exclude-folder', nargs='+', default=[], help='Folder names to exclude')
+    parser.add_argument('-e', '--exclude-file', nargs='+', default=[], help='File names to exclude')
     parser.add_argument('--no-default-excludes', action='store_true',
                         help='Do not exclude .git/node_modules/venv etc. by default')
     return parser.parse_args()
