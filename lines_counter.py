@@ -1,5 +1,12 @@
 import os
+import sys
+import time
 import argparse
+
+# 实时状态刷新的最小时间间隔(秒)
+LIVE_UPDATE_INTERVAL = 0.1
+# 单个文件内每累计这么多行就刷新一次状态,避免超大文件期间计时不动
+LIVE_UPDATE_LINES = 20000
 
 # 默认排除的目录:版本控制、依赖、构建产物、缓存等
 DEFAULT_EXCLUDE_FOLDERS = {
@@ -20,6 +27,65 @@ def parse_args():
     parser.add_argument('--no-default-excludes', action='store_true',
                         help='Do not exclude .git/node_modules/venv etc. by default')
     return parser.parse_args()
+
+def format_duration(seconds):
+    """把秒数格式化成便于阅读的形式: 3.25s / 1m 05.3s / 1h 02m 05.3s"""
+    if seconds < 60:
+        # 用两位小数,很快的扫描也不会只显示 0.0s
+        return f"{seconds:.2f}s"
+    minutes, secs = divmod(seconds, 60)
+    hours, minutes = divmod(int(minutes), 60)
+    if hours:
+        return f"{hours}h {minutes:02d}m {secs:04.1f}s"
+    return f"{minutes}m {secs:04.1f}s"
+
+
+class ProgressReporter:
+    """
+    统计耗时的同时,在扫描过程中持续刷新一行实时状态
+    (已耗时、已扫描文件数、已统计行数),结束后给出最终耗时。
+    """
+
+    def __init__(self, stream=None, interval=LIVE_UPDATE_INTERVAL, enabled=None):
+        self.stream = stream if stream is not None else sys.stderr
+        # 输出重定向到文件时不做原地刷新,否则日志里会塞满回车
+        self.enabled = self.stream.isatty() if enabled is None else enabled
+        self.interval = interval
+        self.start = time.perf_counter()
+        self.last_update = 0.0
+        self.last_width = 0
+        self.files = 0
+        self.lines = 0
+
+    @property
+    def elapsed(self):
+        return time.perf_counter() - self.start
+
+    def update(self, force=False):
+        """刷新实时状态;距上次刷新不足 interval 时直接返回"""
+        if not self.enabled:
+            return
+        now = self.elapsed
+        if not force and now - self.last_update < self.interval:
+            return
+        self.last_update = now
+        line = (f"Scanning... {format_duration(now)} | "
+                f"{self.files} files, {self.lines} lines")
+        # 用空格覆盖上一次的残留内容,再把光标退回行首
+        padding = ' ' * max(0, self.last_width - len(line))
+        self.stream.write('\r' + line + padding + '\r')
+        self.stream.flush()
+        self.last_width = len(line)
+
+    def stop(self):
+        """结束计时,清掉实时状态行,返回最终耗时(秒)"""
+        elapsed = self.elapsed
+        if self.enabled and self.last_width:
+            self.stream.write('\r' + ' ' * self.last_width + '\r')
+            self.stream.flush()
+            self.last_width = 0
+        return elapsed
+
 
 def is_text_file(file_path, block_size=4096):
     """
@@ -64,6 +130,8 @@ def count_and_sort_file_lines(scan_path='.', exclude_folders=None, exclude_files
         print(f"Excluding files: {', '.join(sorted(exclude_files))}")
     print("Scanning files in the given directory and all subdirectories...")
 
+    progress = ProgressReporter()
+
     try:
         script_name = os.path.basename(__file__)
 
@@ -84,7 +152,12 @@ def count_and_sort_file_lines(scan_path='.', exclude_folders=None, exclude_files
 
                 try:
                     with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
-                        line_count = sum(1 for _ in f)
+                        line_count = 0
+                        for _ in f:
+                            line_count += 1
+                            if line_count % LIVE_UPDATE_LINES == 0:
+                                progress.lines = total_lines + line_count
+                                progress.update()
                 except Exception as e:
                     print(f"Could not process file {relative_path}: {e}")
                     continue
@@ -98,6 +171,10 @@ def count_and_sort_file_lines(scan_path='.', exclude_folders=None, exclude_files
                 type_lines[ext] = type_lines.get(ext, 0) + line_count
                 type_files[ext] = type_files.get(ext, 0) + 1
 
+                progress.files = total_files
+                progress.lines = total_lines
+                progress.update()
+
         print("\n--- Line Count by File Type (from highest to lowest) ---")
         for file_type, line_count in sorted(type_lines.items(), key=lambda x: x[1], reverse=True):
             print(f"{file_type:<15}: {line_count:>8} lines  ({type_files[file_type]} files)")
@@ -107,6 +184,9 @@ def count_and_sort_file_lines(scan_path='.', exclude_folders=None, exclude_files
 
     except Exception as e:
         print(f"An error occurred: {e}")
+    finally:
+        elapsed = progress.stop()
+        print(f"Time elapsed: {format_duration(elapsed)}")
 
 if __name__ == "__main__":
     args = parse_args()
